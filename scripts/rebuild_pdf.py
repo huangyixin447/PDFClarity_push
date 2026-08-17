@@ -35,7 +35,7 @@ def main():
         ref_sizes = [(p.rect.width, p.rect.height) for p in rd]
         rd.close()
 
-    tmp_dir = os.path.join(os.pth.dirnaame(args.out_pdf) or ".", "_jpg_tmp")
+    tmp_dir = os.path.join(os.path.dirname(args.out_pdf) or ".", "_jpg_tmp")
     os.makedirs(tmp_dir, exist_ok=True)
 
     new = fitz.open()
