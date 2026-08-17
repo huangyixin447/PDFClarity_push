@@ -17,6 +17,7 @@ Environment overrides (names kept from the old run.sh for continuity):
   SKIP_EXISTING  "1" = skip PDFs whose output exists        (default: 1)
   GPU_IDS        ncnn gpu id(s), e.g. "0" or "0,1"          (default: auto-pick 独显)
   EXTRA_ARGS     extra ncnn args, e.g. "-j 1:2,2:2"
+  EXTRACT_WORKERS 提取页面并行进程数 (默认 min(8, cpu_count), 1 = 单进程)
 
 输出说明:
   用单行实时状态栏显示进度,并叠加实时系统指标:
@@ -401,7 +402,7 @@ def upscale(src, up, log_path, model, scale, gpu_ids, extra_args, monitor, bar):
 
 def process_one(pdf, idx=None, total=None, scale=4, target_w=4320,
                 model="realesrgan-x4plus", gpu_ids="0", extra_args="",
-                skip_existing=True, monitor=None, bar=None):
+                skip_existing=True, extract_workers=1, monitor=None, bar=None):
     tag = f"[{idx}/{total}] " if idx else ""
     base = os.path.splitext(os.path.basename(pdf))[0]
     work = os.path.join(WORK_ROOT, base)
@@ -432,8 +433,9 @@ def process_one(pdf, idx=None, total=None, scale=4, target_w=4320,
     t_start = time.time()
     pages = pdf_page_count(pdf)                # 可能为 None
 
-    print("  [1/3] 提取页面 (zoom 2.0)", flush=True)
-    rc = run_with_progress([sys.executable, EXTRACT, pdf, src, "--zoom", "2.0"],
+    print(f"  [1/3] 提取页面 (zoom 2.0, {extract_workers} 进程)", flush=True)
+    rc = run_with_progress([sys.executable, EXTRACT, pdf, src, "--zoom", "2.0",
+                            "--workers", str(extract_workers)],
                            os.path.join(work, "extract.log"),
                            lambda: count_png(src), pages, "提取", monitor, bar)
     if rc != 0:
@@ -481,6 +483,12 @@ def main():
     skip_existing = env_bool("SKIP_EXISTING", True)
     gpu_ids = os.environ.get("GPU_IDS")
     extra_args = os.environ.get("EXTRA_ARGS", "")
+    try:
+        extract_workers = int(os.environ.get(
+            "EXTRACT_WORKERS", str(min(8, os.cpu_count() or 4))))
+    except ValueError:
+        extract_workers = 1
+    extract_workers = max(1, extract_workers)
 
     # Windows console / child python: 统一 UTF-8,避免中文按 GBK 输出
     for stream in (sys.stdout, sys.stderr):
@@ -530,7 +538,9 @@ def main():
         if os.path.isfile(args.input):
             ok = process_one(args.input, scale=args.scale, target_w=args.target_width,
                              model=model, gpu_ids=gpu_ids, extra_args=extra_args,
-                             skip_existing=skip_existing, monitor=monitor, bar=bar)
+                             skip_existing=skip_existing,
+                             extract_workers=extract_workers,
+                             monitor=monitor, bar=bar)
             print()
             print("All done. Output in:", OUT_ROOT)
             sys.exit(0 if ok else 1)
@@ -559,6 +569,7 @@ def main():
                                    target_w=args.target_width, model=model,
                                    gpu_ids=gpu_ids, extra_args=extra_args,
                                    skip_existing=skip_existing,
+                                   extract_workers=extract_workers,
                                    monitor=monitor, bar=bar):
                         ok += 1
                     else:
