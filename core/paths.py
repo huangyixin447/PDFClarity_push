@@ -16,8 +16,11 @@ def _runtime_base():
     资源,仍取 HERE(见下)。
     """
     if getattr(sys, "frozen", False):
-        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-        base = os.path.join(base, "PDFClarity")
+        if sys.platform == "darwin":
+            base = os.path.expanduser("~/Library/Application Support/PDFClarity")
+        else:
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+            base = os.path.join(base, "PDFClarity")
         os.makedirs(base, exist_ok=True)
         return base
     return HERE

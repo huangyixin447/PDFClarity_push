@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import time
 
 import webview
@@ -52,11 +53,15 @@ class DesktopBridge:
         return chosen[0]
 
     def open_in_folder(self, path):
-        """在资源管理器中定位并选中文件/文件夹(explorer /select)。"""
+        """在文件管理器中定位并选中文件/文件夹。Windows 用 explorer
+        /select;macOS 用 `open -R`。"""
         if not path:
             return False
         try:
-            subprocess.Popen(["explorer", f"/select,{path}"])
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", path])
+            else:
+                subprocess.Popen(["explorer", f"/select,{path}"])
             return True
         except Exception as e:
             logger.warning("打开所在目录失败: %s", e)

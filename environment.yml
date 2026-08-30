@@ -13,4 +13,4 @@ dependencies:
       - uvicorn          # ASGI 服务器
       - python-multipart # 上传接口必需(UploadFile 处理 multipart 表单)
       - pywebview        # 桌面版窗口(可选;不装则 app.py 回退为浏览器模式)
-      - pythonnet        # pywebview 的 Windows 后端(可选;与 pywebview 配套)
+      - "pythonnet; platform_system == 'Windows'"  # 仅 Windows 桌面后端需要

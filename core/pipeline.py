@@ -7,6 +7,7 @@
 """
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -50,19 +51,26 @@ def run_with_progress(cmd, log_path, count_fn, total, stage, monitor=None,
 
 
 def _kill_tree(proc):
-    """Windows 下终止子进程树:terminate() 只杀主进程,extract_pages --workers 8 的
-    进程池/rebuild 子进程需 taskkill /T /F 连根杀。"""
+    """终止子进程树:terminate() 只杀主进程,extract_pages --workers 8 的
+    进程池/rebuild 子进程需连根杀。Windows 用 taskkill /T /F;
+    POSIX(macOS/Linux)用 killpg 杀整个进程组。"""
     proc.terminate()
     try:
         proc.wait(timeout=3)
         return
     except subprocess.TimeoutExpired:
         pass
-    try:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                       capture_output=True, timeout=10)
-    except OSError:
-        pass
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                           capture_output=True, timeout=10)
+        except OSError:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
 
 
 def upscale(src, up, log_path, model, scale, gpu_ids, extra_args, monitor=None,
