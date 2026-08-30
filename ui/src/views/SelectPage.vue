@@ -18,8 +18,13 @@
       <section class="col col-file">
         <h3 class="page-title">选择 PDF 文档</h3>
 
-        <!-- 点击 / 拖拽选择 PDF -->
-        <el-upload class="dropzone" drag :auto-upload="false" :show-file-list="false"
+        <!-- 点击 / 拖拽选择 PDF(桌面模式走原生对话框,浏览器模式走上传) -->
+        <div v-if="isDesktop" class="dropzone dropzone-custom" :class="{ locked: running }"
+             @click="onDesktopPick">
+          <div class="dz-icon">PDF</div>
+          <div class="el-upload__text">点击选择 或 拖拽 PDF 到窗口</div>
+        </div>
+        <el-upload v-else class="dropzone" drag :auto-upload="false" :show-file-list="false"
                    accept=".pdf" :disabled="running" :on-change="onPick">
           <div class="dz-icon">PDF</div>
           <div class="el-upload__text">点击选择 或 拖拽 PDF 到此处</div>
@@ -38,8 +43,12 @@
               <el-tag v-else type="success" size="small">尚未生成</el-tag>
             </el-descriptions-item>
           </el-descriptions>
-          <el-button size="small" text type="primary" :disabled="running"
-                     @click="control.clearFile()">更换文件</el-button>
+          <div class="file-actions">
+            <el-button size="small" text type="primary" :disabled="running"
+                       @click="control.clearFile()">更换文件</el-button>
+            <el-button v-if="isDesktop && phase === 'done' && outputPath" size="small"
+                       type="primary" @click="openInFolder">在文件夹中显示</el-button>
+          </div>
         </div>
         <div v-else class="empty-box">
           <el-empty description="尚未选择文档" :image-size="90" />
@@ -75,6 +84,24 @@ const sizeText = computed(() => {
   return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : (n / 1024).toFixed(0) + " KB";
 });
 const pagesText = computed(() => control.fileInfo?.pages ?? "未知（探测失败）");
+
+// ── 桌面模式(pywebview 壳):原生对话框选文件 + 拖拽取绝对路径(不复制) ──
+const isDesktop = !!window.pywebview?.api;
+const outputPath = computed(() => state.value?.output_path ?? "");
+
+async function onDesktopPick() {
+  if (running.value) return;
+  try {
+    const path = await window.pywebview.api.select_file();
+    if (path) await control.selectByPath(path);
+  } catch (e) {
+    ElMessage.error(e.message || "选择文件失败");
+  }
+}
+
+function openInFolder() {
+  if (outputPath.value) window.pywebview.api.open_in_folder(outputPath.value);
+}
 
 // ── 左栏:终端式状态输出(阶段切换/每完成一页追加一行,自动滚动到底) ──
 const consoleLines = ref([]);        // [{text, cls}] cls ∈ {"" , "ok", "err"}
@@ -175,10 +202,16 @@ const preventDrop = (e) => e.preventDefault();
 onMounted(() => {
   window.addEventListener("dragover", preventDrop);
   window.addEventListener("drop", preventDrop);
+  // 桌面拖拽回传路径的全局入口(由 server/bridge.py 的 drop 钩子调用)
+  window.__pdfclarityDesktopPick = (path) => {
+    if (running.value) return;
+    control.selectByPath(path).catch((e) => ElMessage.error(e.message || "文件探测失败"));
+  };
 });
 onUnmounted(() => {
   window.removeEventListener("dragover", preventDrop);
   window.removeEventListener("drop", preventDrop);
+  delete window.__pdfclarityDesktopPick;
 });
 </script>
 
@@ -201,10 +234,22 @@ onUnmounted(() => {
 /* 右栏:文件选择 */
 .col-file { flex: 1; max-width: 720px; padding: 24px 16px; }
 .dropzone :deep(.el-upload-dragger) { padding: 36px 0; }
+/* 桌面模式自定义 dropzone:仿 el-upload 拖拽区外观(可点击) */
+.dropzone-custom {
+  border: 1px dashed var(--el-border-color-darker, #d9d9d9);
+  border-radius: 6px;
+  background: #fafafa;
+  padding: 36px 0;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.dropzone-custom:hover { border-color: #409eff; background: #f5f9ff; }
+.dropzone-custom.locked { opacity: 0.6; cursor: not-allowed; }
 .dz-icon { font-size: 40px; font-weight: 700; color: #409eff; letter-spacing: 2px;
   margin-bottom: 8px; line-height: 1; }
 .file-info { margin-top: 8px; }
-.file-info .el-button { margin-top: 8px; }
+.file-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
 .empty-box { margin-top: 8px; border: 1px dashed #e4e7ed; border-radius: 6px; }
 /* 底部进度条 */
 .bottom-area { flex-shrink: 0; padding: 10px 16px; border-top: 1px solid #ebeef5;

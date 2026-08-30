@@ -19,6 +19,10 @@ ui/dist/
 vendor/
 vendor_tools/
 
+# ---- 打包产物（GitHub Release 单独上传,不入库） ----
+build/
+dist/
+
 # ---- 超分引擎的探针输出（曾误入库，现仅保留引擎与模型） ----
 bin/realesrgan/output.png
 

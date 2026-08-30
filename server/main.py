@@ -23,7 +23,7 @@ async def lifespan(_app):
     jobs.shutdown()
 
 
-app = FastAPI(title="PDFClarity", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="PDFClarity", version="0.5.0", lifespan=lifespan)
 
 
 class JobRequest(BaseModel):
