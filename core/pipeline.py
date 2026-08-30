@@ -26,7 +26,6 @@ def run_with_progress(cmd, log_path, count_fn, total, stage, monitor=None,
     """
     with open(log_path, "w", encoding="utf-8", errors="replace") as log:
         proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
-    _set_low_priority(proc)
     t0 = time.time()
     canceled = False
     while proc.poll() is None:
