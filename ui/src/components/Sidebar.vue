@@ -58,7 +58,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="GPU">
-          <el-select v-model="params.gpu_ids" class="full">
+          <el-select v-model="params.gpu_ids" class="full" placeholder="自动选择">
             <el-option v-for="o in gpuOptions" :key="String(o.value)"
                        :label="o.label" :value="o.value" />
           </el-select>

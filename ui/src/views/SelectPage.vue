@@ -18,27 +18,12 @@
       <section class="col col-file">
         <h3 class="page-title">选择 PDF 文档</h3>
 
-        <!-- 通道一:点击 / 拖拽(浏览器模式,后端复制到 work/inbox/ 再处理) -->
+        <!-- 点击 / 拖拽选择 PDF -->
         <el-upload class="dropzone" drag :auto-upload="false" :show-file-list="false"
                    accept=".pdf" :disabled="running" :on-change="onPick">
           <div class="dz-icon">PDF</div>
           <div class="el-upload__text">点击选择 或 拖拽 PDF 到此处</div>
-          <template #tip>
-            <div class="el-upload__tip">
-              浏览器模式会把文件复制到 work/inbox/ 后处理（桌面版不经过此处，直接引用原文件）
-            </div>
-          </template>
         </el-upload>
-
-        <!-- 通道二:粘贴绝对路径(与桌面壳同一条链路:selectByPath) -->
-        <div class="path-row">
-          <el-input v-model="pathInput" placeholder="或粘贴文件绝对路径后点「探测」(桌面版同通道)"
-                    clearable :disabled="running" @keyup.enter="onProbe" />
-          <el-button :disabled="running || !pathInput.trim() || probeBusy"
-                     :loading="probeBusy" @click="onProbe">
-            探测
-          </el-button>
-        </div>
 
         <!-- 选中文件信息 -->
         <div v-if="fileInfo" class="file-info">
@@ -54,7 +39,7 @@
             </el-descriptions-item>
           </el-descriptions>
           <el-button size="small" text type="primary" :disabled="running"
-                     @click="control.clearFile(); pathInput.value = ''">更换文件</el-button>
+                     @click="control.clearFile()">更换文件</el-button>
         </div>
         <div v-else class="empty-box">
           <el-empty description="尚未选择文档" :image-size="90" />
@@ -82,8 +67,6 @@ import { useAppControl } from "../store/appControl";
 const store = useAppState();
 const control = useAppControl();
 const { state, running, phase, percent } = storeToRefs(store);
-const pathInput = ref("");
-const probeBusy = ref(false);          // 探测中(大 PDF 页数统计可能耗时数百 ms~s 级)
 
 const fileInfo = computed(() => control.fileInfo);
 const sizeText = computed(() => {
@@ -180,25 +163,11 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(smoothTimer));
 
-// 通道一:点击 / 拖拽上传
+// 点击 / 拖拽上传
 function onPick(uploadFile) {
   // selectFile = 上传副本 -> selectByPath(inspect) 选中
   control.selectFile(uploadFile.raw)
     .catch((e) => ElMessage.error(e.message || "上传失败"));
-}
-
-// 通道二:粘贴绝对路径 -> inspect
-async function onProbe() {
-  const p = pathInput.value.trim();
-  if (!p || probeBusy.value || running.value) return;
-  probeBusy.value = true;
-  try {
-    await control.selectByPath(p);
-  } catch (e) {
-    ElMessage.error(e.message || "文件不存在或不是 PDF");
-  } finally {
-    probeBusy.value = false;
-  }
 }
 
 // 阻止浏览器默认「拖放打开文件」:拖到窗口空白处会直接跳转打开 PDF
@@ -234,7 +203,6 @@ onUnmounted(() => {
 .dropzone :deep(.el-upload-dragger) { padding: 36px 0; }
 .dz-icon { font-size: 40px; font-weight: 700; color: #409eff; letter-spacing: 2px;
   margin-bottom: 8px; line-height: 1; }
-.path-row { display: flex; gap: 8px; margin: 16px 0; }
 .file-info { margin-top: 8px; }
 .file-info .el-button { margin-top: 8px; }
 .empty-box { margin-top: 8px; border: 1px dashed #e4e7ed; border-radius: 6px; }

@@ -2,7 +2,6 @@
   <div class="app-root">
     <header class="topbar">
       <span class="brand">PDFClarity</span>
-      <span class="sub">低清 PDF 一键变清晰</span>
       <span class="spacer" />
       <el-tag :type="phaseTag.type" size="small" effect="dark">{{ phaseTag.text }}</el-tag>
       <span class="conn" :class="connClass">
@@ -61,7 +60,6 @@ onUnmounted(() => store.stop());
 .topbar { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 16px;
   background: #001529; color: #fff; flex-shrink: 0; }
 .brand { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
-.sub { font-size: 12px; color: #8c9aa8; }
 .spacer { flex: 1; }
 .conn { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
 .conn .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
