@@ -6,7 +6,7 @@ import sys
 from concurrent.futures import ProcessPoolExecutor
 
 try:
-    import pymupdf as fitz          # pymupdf>=1.24 起推荐,免 fitz 弃用告警
+    import pymupdf as fitz          
 except ImportError:
     import fitz
 
@@ -26,7 +26,7 @@ def _worker_init():
 
 
 def _extract_chunk(job):
-    """渲染并保存一批页面(独立打开文档,进程内实例,线程安全)。
+    """渲染并保存一批页面
 
     返回该块成功处理的页数;任一页失败直接抛异常,由主进程统一报错退出。
     """

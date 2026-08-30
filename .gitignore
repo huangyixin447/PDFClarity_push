@@ -1,0 +1,29 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 运行时生成（不入库，clear.bat 或手动清理） ----
+work/
+output/
+
+# ---- 前端 ----
+ui/node_modules/
+ui/dist/
+
+# ---- 第三方依赖 / 工具链（环境内安装，勿提交） ----
+# vendor/   : 沙箱内因 pip 受限而内置的 fastapi 等依赖
+# vendor_tools/ : PyInstaller 打包工具链（仅打包用）
+vendor/
+vendor_tools/
+
+# ---- 超分引擎的探针输出（曾误入库，现仅保留引擎与模型） ----
+bin/realesrgan/output.png
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

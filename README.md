@@ -41,8 +41,8 @@ pip install pymupdf pillow tqdm
 # Windows
 python run.py <输入.pdf 或 文件夹> [放大倍数] [目标宽度]
 
-# macOS / Git Bash（run.sh 只是 run.py 的兼容入口）
-./run.sh <输入.pdf 或 文件夹> [放大倍数] [目标宽度]
+# macOS / Git Bash（run.py 跨平台，macOS 下用 python3；启动时自动处理 quarantine 放行）
+python3 run.py <输入.pdf 或 文件夹> [放大倍数] [目标宽度]
 ```
 
 示例：
@@ -78,8 +78,7 @@ python run.py "input.pdf" 4 0           # 4x 超分并保留完整尺寸
 
 ```
 PDFClarity/
-├── run.py                 # 主入口（Windows / macOS 通用）
-├── run.sh                 # macOS / Git Bash 兼容入口
+├── run.py                 # 主入口（Windows / macOS / Git Bash 通用）
 ├── scripts/
 │   ├── extract_pages.py   # PDF → 每页 PNG（顺带去 JPEG2000）
 │   └── rebuild_pdf.py     # 超分后的图 → 干净 PDF
@@ -92,7 +91,7 @@ PDFClarity/
 ## 常见问题
 
 - **Windows SmartScreen 拦截**：右键 `bin/realesrgan/realesrgan-ncnn-vulkan.exe` → 属性 → 勾选「解除锁定」。
-- **macOS 首次运行被拦截**：执行一次 `xattr -dr com.apple.quarantine bin/realesrgan`。
+- **macOS 首次运行被拦截**：run.py 启动时会自动清除引擎的 quarantine 属性并设置可执行位；若仍被拦截，可手动执行一次 `xattr -dr com.apple.quarantine bin/realesrgan`。
 - **找不到 GPU / 超分报错**：确认已安装最新显卡驱动。注意 `nvidia-smi` 的编号与 Vulkan 枚举编号可能不一致；可手动用 `GPU_IDS` 指定（如 `GPU_IDS=1`）。
 - **长路径报错**：把项目放到短路径（如 `D:\pdfclarity`），或启用 Windows 的 LongPathsEnabled。
 - **磁盘占用**：4x 超分的中间 PNG 较大；处理完删除 `work/` 即可回收空间。

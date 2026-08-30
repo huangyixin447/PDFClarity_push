@@ -9,3 +9,5 @@ dependencies:
       - pillow
       - tqdm
       - psutil
+      - fastapi
+      - uvicorn

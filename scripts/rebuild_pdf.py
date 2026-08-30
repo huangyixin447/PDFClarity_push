@@ -4,6 +4,10 @@ import sys, os, argparse, glob
 import fitz
 from PIL import Image
 
+# 本工具的产物就是 4x 大图(对 4x 成品再超分时单页可达数亿像素),
+# PIL 默认 1.79 亿像素的 DecompressionBomb 保护会误伤,故上调上限(2G 仍防恶意文件)。
+Image.MAX_IMAGE_PIXELS = 2_000_000_000
+
 try:
     from tqdm import tqdm
 except ImportError:                      # graceful fallback if tqdm missing
