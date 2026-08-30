@@ -15,7 +15,6 @@ export const useAppControl = defineStore("appControl", {
   state: () => ({
     selectedFile: null,            // 当前选中 PDF 的绝对路径(后端可处理)
     fileInfo: null,                // inspect 结果 {name, size, pages, out_path, out_exists}
-    view: "select",                // select | work(M3 切到界面二)
     params: {
       scale: 4,
       target_width: 4320,
@@ -109,14 +108,11 @@ export const useAppControl = defineStore("appControl", {
       }
       try {
         await api.createJob({ pdf: this.selectedFile, ...this.params, skip_existing: skip });
-        this.view = "work";                    // [M3] 开始后自动切界面二
         ElMessage.success("任务已开始");
       } catch (e) {
         ElMessage.error(e.message);
       }
     },
-
-    backToSelect() { this.view = "select"; },  // [M3] 界面二「更换文档」回界面一
 
     // [M3] 取消:确认后置位后端标志;canceled 后 startState 自动回 ready 可重跑
     async cancelJob() {

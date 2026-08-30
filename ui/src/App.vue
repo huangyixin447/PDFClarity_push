@@ -11,11 +11,10 @@
     </header>
 
     <div class="body">
-      <Sidebar />
       <main class="main">
-        <SelectPage v-if="view === 'select'" />
-        <WorkPage v-else-if="view === 'work'" />
+        <SelectPage />
       </main>
+      <Sidebar />
     </div>
   </div>
 </template>
@@ -27,13 +26,11 @@ import { useAppState } from "./store/appState";
 import { useAppControl } from "./store/appControl";
 import Sidebar from "./components/Sidebar.vue";
 import SelectPage from "./views/SelectPage.vue";
-import WorkPage from "./views/WorkPage.vue";
 
 const store = useAppState();
 const control = useAppControl();
 store.start();                               // 轮询生命周期:App 挂载即启动
 const { state, pollError } = storeToRefs(store);
-const view = computed(() => control.view);   // select | work(M3 切界面二)
 
 // 机器核数 < 8 时,把默认提取线程数收敛到实际核数(否则 paramsValid 永远为 false)
 watch(() => state.value?.cpu_count, (n) => {

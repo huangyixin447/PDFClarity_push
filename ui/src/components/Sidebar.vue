@@ -74,13 +74,13 @@
       <div v-if="running" class="lock-tip">任务运行中，参数已锁定</div>
     </el-card>
 
-    <!-- ── 开始按钮 ─────────────────────────────────────── -->
+    <!-- ── 开始 / 停止按钮(运行时切换为「停止任务」) ─────────── -->
     <div class="footer">
-      <el-button class="start-btn" type="primary" size="large"
-                 :disabled="startState === 'idle'"
-                 :loading="startState === 'running'"
-                 @click="control.start()">
-        {{ startText }}
+      <el-button class="start-btn" size="large"
+                 :type="running ? 'danger' : 'primary'"
+                 :disabled="!running && startState === 'idle'"
+                 @click="running ? control.cancelJob() : control.start()">
+        {{ running ? "停止任务" : startText }}
       </el-button>
       <div class="start-hint">{{ startHint }}</div>
     </div>
@@ -126,14 +126,11 @@ function barColor(v) {
   return v >= 80 ? "#e6a23c" : v >= 50 ? "#409eff" : "#67c23a";
 }
 
-// ── 开始按钮(状态机见 M2 方案 §5.4) ──
+// ── 开始 / 停止按钮(状态机见 M2 方案 §5.4;运行时切换为「停止任务」) ──
 const finished = computed(() => phase.value === "done" || phase.value === "error");
-const startText = computed(() => {
-  if (running.value) return "正在超分…";
-  return finished.value ? "重新超分" : "开始超分";
-});
+const startText = computed(() => (finished.value ? "重新超分" : "开始超分"));
 const startHint = computed(() => {
-  if (running.value) return "请勿关闭窗口或重复点击";
+  if (running.value) return "任务运行中，点击「停止任务」可终止";
   if (startState.value === "idle") {
     if (!control.selectedFile) return "请先选择 PDF 文档";
     if (!control.paramsValid) return "参数不合法，请检查设置";
@@ -149,7 +146,7 @@ const startHint = computed(() => {
 <style scoped>
 .sidebar {
   width: 320px; padding: 12px; display: flex; flex-direction: column; gap: 12px;
-  overflow-y: auto; background: #f5f7fa; border-right: 1px solid #e4e7ed; flex-shrink: 0;
+  overflow-y: auto; background: #f5f7fa; border-left: 1px solid #e4e7ed; flex-shrink: 0;
 }
 .sec { border: none; }
 .sec-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
