@@ -35,7 +35,7 @@ pip install pywebview pythonnet
 
 也可直接用仓库内的 `environment.yml` 创建 conda 环境：`conda env create -f environment.yml`。
 
-环境要求：Python 3.10+、支持 Vulkan 的 GPU（NVIDIA / AMD / Intel）、Windows 10/11（自带 WebView2 运行时）。macOS 也可用：桌面版与命令行均可启动（拖拽选文件不可用，超分需自行补装 MoltenVK）。
+环境要求：Python 3.10+、支持 Vulkan 的 GPU（NVIDIA / AMD / Intel）、Windows 10/11（自带 WebView2 运行时）。macOS 也可用：桌面版与命令行均可启动（引擎已内置 MoltenVK，仅拖拽选文件不可用）。
 
 ### 2. 启动桌面版
 
