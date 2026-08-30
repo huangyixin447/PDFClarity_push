@@ -5,9 +5,12 @@ dependencies:
   - python=3.12
   - pip
   - pip:
-      - pymupdf
-      - pillow
-      - tqdm
-      - psutil
-      - fastapi
-      - uvicorn
+      - pymupdf          # PDF 渲染/重建(提取与重建阶段)
+      - pillow           # 图片处理
+      - tqdm             # 命令行进度条
+      - psutil           # 系统监控(缺失时自动降级)
+      - fastapi          # Web 后端
+      - uvicorn          # ASGI 服务器
+      - python-multipart # 上传接口必需(UploadFile 处理 multipart 表单)
+      - pywebview        # 桌面版窗口(可选;不装则 app.py 回退为浏览器模式)
+      - pythonnet        # pywebview 的 Windows 后端(可选;与 pywebview 配套)
