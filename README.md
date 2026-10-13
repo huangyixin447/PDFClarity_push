@@ -1,116 +1,195 @@
 # PDFClarity
 
-把**低分辨率 / 在 Skim·预览里显示空白**的扫描版 PDF 变清晰。
+把**低分辨率 / 显示空白**的扫描版 PDF 一键变清晰。
 
-针对的就是「考研真相 真题方法篇」这类问题:每页是一整张图片,分辨率只有 ~144 DPI,而且用的是 JPEG2000(JPXDecode)+ 软蒙版编码 —— Apple 的 PDFKit 渲染不出来,所以在 Skim/预览里是空白页。
+针对「考研真题、老书扫描件」这类 PDF：每页是一整张图片，分辨率只有约 144 DPI，且使用 **JPEG2000 + 软蒙版**编码——部分阅读器（如 Skim、macOS 预览）渲染不出来，显示为空白页。
 
-本工具做两件事:
-1. **修复空白**:重新渲染每页(去掉 JPEG2000),任何 PDF 阅读器都能正常打开。
-2. **提清晰度**:用 Real-ESRGAN(Apple GPU 加速)对每页做 AI 超分,字边缘更锐利。
+它会重新渲染每一页（去掉 JPEG2000，任何阅读器都能正常打开），再用 Real-ESRGAN（GPU 加速）逐页做 AI 超分，让字迹更锐利。
 
-> 注意:144 DPI 的源图信息量有限,AI 只能"重建/补全"细节、改善观感,**无法凭空恢复真实细节**。要真正高清,最好拿到出版社的高分辨率原版。
+> 注意：144 DPI 的源图信息量有限，AI 只能「重建 / 补全」细节、改善观感，无法凭空恢复真实细节。要真正高清，最好拿到出版社的高分辨率原版。
 
-## 环境准备(conda,只需一次)
+---
 
-推荐用 conda 环境运行。建环境 + 装包,任选一种:
+## 快速开始
 
-```bash
-# 方式 A:手动
-conda create -n pdfclarity python=3.12 -y
-conda activate pdfclarity
-pip install pymupdf pillow tqdm
+有三种入口：
 
-# 方式 B:用本项目的 environment.yml(等价)
-conda env create -f environment.yml
+| 入口 | 适合场景 | 启动命令 |
+| ---- | ---- | ---- |
+| **桌面版**（推荐） | 日常使用，原生窗口，拖拽选文件 | `python app.py` |
+| **网页版** | 不想装 pywebview、远程访问 | `python app.py --server-only` |
+| **命令行** | 批量处理、脚本化 | `python run.py <输入> [倍数] [宽度]` |
+
+### 1. 安装依赖
+
+```powershell
+# 建议用 conda 或 venv 创建独立环境
+python -m venv .venv
+.venv\Scripts\activate
+
+pip install pymupdf pillow tqdm psutil fastapi uvicorn python-multipart
+
+# 仅桌面版需要（不装也不影响：会自动回退成网页版并打开浏览器）
+pip install pywebview pythonnet
 ```
 
-需要三个 Python 包:`pymupdf`(PDF 读写/渲染)、`pillow`(图像缩放/JPEG 编码)、`tqdm`(进度条)。
-超分工具 `bin/realesrgan/` 已自带,不走 Python,无需额外安装。
-（`tqdm` 没装也能跑,只是没有 Python 那两步的进度条;超分步骤的进度条由 `run.sh` 自己画,不依赖它。）
-
-## 用法
-
-每次运行前先激活环境:
+macOS 使用以下命令创建环境（`pythonnet` 仅 Windows 需要）：
 
 ```bash
-conda activate pdfclarity
-cd /Users/wzf-perfomancemac/It_Development/PDFClarity
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pymupdf pillow tqdm psutil fastapi uvicorn python-multipart pywebview
 ```
 
-**处理单个 PDF:**
-```bash
-./run.sh "/Users/wzf-perfomancemac/Desktop/考研真相/真题方法篇 英语 (一）.原始备份.pdf"
-```
+也可直接用仓库内的 `environment.yml` 创建 conda 环境：`conda env create -f environment.yml`。
 
-**批量处理一个文件夹下的所有 PDF:**
-```bash
-./run.sh "/path/to/某个文件夹"
-```
-传入的是文件夹时,会自动找出其中所有 `.pdf` 逐个处理(中文名、带空格的名都支持)。
+环境要求：Python 3.10+、支持 Vulkan 的 GPU（NVIDIA / AMD / Intel）、Windows 10/11（自带 WebView2 运行时）。macOS 也可用：桌面版与命令行均可启动（引擎已内置 MoltenVK，仅拖拽选文件不可用）。
 
-输出统一放在 `output/<原名>_clear.pdf`。
-（`run.sh` 内部调用 `python3`,激活 conda 环境后它就指向该环境的 Python,无需改动。）
+### 2. 构建界面
 
-### 批量模式的可选开关(环境变量)
-
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| `RECURSIVE` | `0` | 设 `1` 则连**子文件夹**里的 PDF 也一起处理 |
-| `SKIP_EXISTING` | `1` | 默认**跳过**已生成过成品的 PDF(可中断后续跑续传);设 `0` 强制重做 |
-
-例:递归处理整个目录树,并强制全部重做:
-```bash
-RECURSIVE=1 SKIP_EXISTING=0 ./run.sh "/path/to/文件夹"
-```
-
-批量结束会汇总「成功/失败」数量;某个 PDF 出错不会中断,其余继续处理,最后列出失败文件。
-
-### 参数(可选)
+从源码首次运行桌面版或网页版前，需要安装 Node.js，并构建前端。`ui/dist/` 是构建产物，不随源码提交；命令行模式不需要此步骤。
 
 ```bash
-./run.sh <input.pdf> [model-scale] [target-width]
+cd ui
+npm ci
+npm run build
+cd ..
 ```
+
+### 3. 启动桌面版
+
+```powershell
+python app.py
+```
+
+启动后会先做一次 GPU 自检，稍等几秒弹出窗口：
+
+- 点击文件区或把 PDF 拖进窗口选择文件（不复制，直接引用原文件）；
+- 在右侧栏调整参数，点「开始」；
+- 左侧逐行滚动处理进度，底部进度条平滑推进；
+- 完成后点「在文件夹中显示」定位成品。
+
+服务默认监听 `127.0.0.1:8000`，端口被占用时会自动顺延。
+
+### 4. 打包版（可选）
+
+若使用包含 `PDFClarity.exe` 的 Windows 打包版，可直接双击运行，无需安装 Python；中间文件与成品存放在 `%LOCALAPPDATA%\PDFClarity\` 下（而非项目目录）。源码仓库不包含打包后的 exe。
+
+---
+
+## 使用说明
+
+### 处理参数
 
 | 参数 | 默认 | 说明 |
-|------|------|------|
-| `model-scale` | `4` | Real-ESRGAN 放大倍数(`2` 或 `4`)。`4` 质量最好 |
-| `target-width` | `4320` | 最终每页宽度(像素)。4320 ≈ 288 DPI;设 `0` 保留完整放大尺寸 |
+| ---- | ---- | ---- |
+| 放大倍数 | 4 | Real-ESRGAN 放大倍数（2 / 4），4 质量最好 |
+| 目标宽度 | 4320 | 成品每页宽度（px），约 288 DPI；0 = 保留完整超分尺寸 |
+| 模型 | realesrgan-x4plus | 可换 `realesrgan-x4plus-anime` 等 |
+| GPU | 自动选择 | 指定 ncnn GPU 编号（如 `0`、`0,1`）；默认自动优先独显（NVIDIA） |
+| 提取进程数 | CPU 核数 | 拆分阶段的并行进程数，CPU 满载时可手动调小 |
 
-「4× 超分 → 缩到 288 DPI」是质量与体积的平衡点。想要极致清晰、不在乎体积,用:
-```bash
-./run.sh "input.pdf" 4 0
+成品默认输出到 `output/`，也可在界面中设置固定输出目录或保存到源 PDF 所在目录；若同名成品已存在，开始时会询问「跳过还是重做」。输出偏好保存在本机的 `config.json`，不随源码提交。
+
+### 命令行（run.py）
+
+```powershell
+python run.py <输入.pdf 或 文件夹> [放大倍数] [目标宽度]
+python run.py "真题方法篇.pdf"          # 处理单个 PDF
+python run.py "D:\书籍\某文件夹"        # 批量处理文件夹下所有 PDF
+python run.py "input.pdf" 4 0           # 4x 超分并保留完整尺寸
 ```
 
-可选环境变量:`MODEL`(默认 `realesrgan-x4plus`,可换 `realesrgan-x4plus-anime`)、`PYTHON`。
+批量时某个 PDF 出错不会中断，其余继续处理，结束时汇总成功 / 失败数。
 
-## 依赖
+#### 环境变量
 
-- macOS(Apple Silicon GPU,通过 Vulkan/Metal)
-- conda 环境 `pdfclarity`(见上面「环境准备」),内含 `pymupdf` + `pillow`
-- Real-ESRGAN 二进制与模型已自带于 `bin/realesrgan/`(来自官方 xinntao/Real-ESRGAN v0.2.5.0)
+| 变量 | 默认 | 说明 |
+| ---- | ---- | ---- |
+| `MODEL` | `realesrgan-x4plus` | 超分模型 |
+| `RECURSIVE` | `0` | 批量时设为 `1`，连子文件夹一起处理 |
+| `SKIP_EXISTING` | `1` | 跳过已生成成品的 PDF（支持中断后续传）；设 `0` 强制重做 |
+| `GPU_IDS` | 自动选择 | 指定 GPU 编号（如 `0` 或 `0,1`） |
+| `EXTRA_ARGS` | 空 | 额外传给引擎的参数，如 `-j 1:2,2:2` |
+
+---
+
+## 工作原理
+
+处理过程分三步：
+
+```
+输入 PDF
+  │
+  ▼
+[1/3] 提取  scripts/extract_pages.py
+  │          PyMuPDF 把每页渲染成 PNG（zoom 2.0，白底 RGB）
+  │          顺带去掉 JPEG2000 / 软蒙版 → 解决「空白页」
+  ▼
+[2/3] 超分  realesrgan-ncnn-vulkan（GPU）
+  │          对每页做 Real-ESRGAN AI 放大（x2 / x4），耗时约占 70%
+  ▼
+[3/3] 重建  scripts/rebuild_pdf.py
+  │          超分图压缩回干净 PDF（JPEG 90，保留原始页面尺寸/旋转）
+│          并复制原 PDF 的目录/书签、页码标签、元数据（scripts/copy_toc.py）
+  ▼
+成品 PDF（output/）
+```
+
+---
 
 ## 目录结构
 
 ```
 PDFClarity/
-├── run.sh                 # 一键运行
-├── scripts/
-│   ├── extract_pages.py   # PDF → 每页 PNG(顺带去 JPEG2000)
-│   └── rebuild_pdf.py     # 超分后的图 → 干净 PDF
-├── bin/realesrgan/        # 自带的超分工具 + 模型
-├── work/                  # 中间文件(可随时删除以释放空间)
-└── output/                # 成品 PDF
+├── app.py            # 桌面版 / 网页版入口
+├── run.py            # 命令行入口
+├── core/             # 核心逻辑
+│   ├── paths.py      #   路径常量
+│   ├── pipeline.py   #   三轮流水线调度
+│   ├── gpu.py        #   引擎定位、GPU 选择
+│   └── monitor.py    #   系统监控采样
+├── scripts/          # 流水线子进程脚本
+│   ├── extract_pages.py
+│   ├── rebuild_pdf.py
+│   └── copy_toc.py   #   目录/书签迁移（rebuild 自动调用；也可单独修复旧成品）
+├── server/           # FastAPI 后端（/api/state、/api/jobs、/api/logs…）
+├── ui/               # Vue3 前端（构建产物在 ui/dist/）
+├── bin/realesrgan/   # 超分引擎 + 模型（已内置，勿改动）
+└── environment.yml   # conda 环境定义
 ```
 
-## 耗时与磁盘
+运行时自动生成 `work/`（中间文件，可随时删除）与 `output/`（成品 PDF），均已 git 忽略。
 
-- 130 页在 M4 Pro 上约几分钟~十几分钟。
-- 中间文件(4× PNG)较大,可能占几个 GB;处理完删除 `work/` 即可回收。
+---
 
-## 首次运行被 macOS 拦截?
+## 常见问题
 
-若提示无法打开/开发者无法验证,执行一次:
+- **首次运行被 SmartScreen / 杀软拦截**：打包版 exe 右键 → 属性 → 勾选「解除锁定」；杀软误报请加入信任区。
+- **找不到 GPU / 超分报错**：确认已安装最新显卡驱动。注意 `nvidia-smi` 的编号与 Vulkan 枚举编号可能不一致，可手动用 `GPU_IDS` 指定。
+- **长路径报错**：把项目放到短路径（如 `D:\pdfclarity`），或启用 Windows 的 `LongPathsEnabled`。
+- **磁盘占用**：4x 超分的中间 PNG 较大，处理完删除 `work/` 即可回收（`clear.bat` 一键清理）。
+- **电脑卡顿**：超分阶段 GPU 满载、拆分阶段多进程 CPU 打满属正常现象；可调小「提取进程数」。
+- **8000 端口被占**：桌面版会自动顺延端口，无需处理。
+- **旧版成品没有目录（书签）**：早期版本重建时未复制目录，可用原 PDF 补回：`python scripts/copy_toc.py <原.pdf> <成品_clear.pdf>`（原地修复，先写临时文件校验后再替换）。
+
+---
+
+## 开发者
+
+```powershell
+# 前端开发态（改 ui/ 代码时用，热更新）
+cd ui
+npm install
+npm run dev          # → http://127.0.0.1:5173（/api 自动代理到后端）
+# 同时另开终端跑 python app.py --server-only 提供后端
+
+# 前端产物构建（改完前端后需重新 build，app.py 才显示新界面）
+cd ui && npm run build
+```
+
+PDF 重建回归验证（在项目根目录、已安装 Python 依赖的环境中运行）：
+
 ```bash
-xattr -dr com.apple.quarantine bin/realesrgan
+python -m unittest discover -s tests -v
 ```
-(`run.sh` 已自动尝试,一般无需手动。)

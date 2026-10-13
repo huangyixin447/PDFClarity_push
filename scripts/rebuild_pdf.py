@@ -4,6 +4,13 @@ import sys, os, argparse, glob
 import fitz
 from PIL import Image
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from copy_toc import copy_navigation      # 目录/页码标签/元数据迁移(与本文件同目录)
+
+# 本工具的产物就是 4x 大图(对 4x 成品再超分时单页可达数亿像素),
+# PIL 默认 1.79 亿像素的 DecompressionBomb 保护会误伤,故上调上限(2G 仍防恶意文件)。
+Image.MAX_IMAGE_PIXELS = 2_000_000_000
+
 try:
     from tqdm import tqdm
 except ImportError:                      # graceful fallback if tqdm missing
@@ -23,7 +30,7 @@ def main():
     ap.add_argument("--quality", type=int, default=90)
     args = ap.parse_args()
 
-    files = sorted(glob.glob(os.path.join(args.imgdir, "*.png")) +glob.glob(os.path.join(args.imgdir, "*.jpg")))
+    files = sorted(glob.glob(os.path.join(args.imgdir, "*.png")) + glob.glob(os.path.join(args.imgdir, "*.jpg")))
     if not files:
         sys.exit(f"No images found in {args.imgdir}")
 
@@ -32,10 +39,14 @@ def main():
     if args.ref_pdf and os.path.exists(args.ref_pdf):
         fitz.TOOLS.mupdf_display_errors(False)
         rd = fitz.open(args.ref_pdf)
+        # rect 和 get_pixmap() 都已包含页面旋转;直接使用可见页面尺寸,
+        # 避免 90/270 度页面被再次交换宽高,导致重建图片拉伸。
         ref_sizes = [(p.rect.width, p.rect.height) for p in rd]
         rd.close()
 
-    tmp_dir = os.path.join(os.path.dirname(args.out_pdf) or ".", "_jpg_tmp")
+    out_dir = os.path.dirname(args.out_pdf) or "."
+    tmp_dir = os.path.join(out_dir, f"_jpg_tmp_{os.getpid()}")   # pid 后缀,避免并发冲突
+    os.makedirs(out_dir, exist_ok=True)                          # 显式创建输出目录
     os.makedirs(tmp_dir, exist_ok=True)
 
     new = fitz.open()
@@ -55,16 +66,23 @@ def main():
         pg = new.new_page(width=w_pt, height=h_pt)
         pg.insert_image(pg.rect, filename=jpg)
 
+    # 原 PDF 的目录(书签)、页码标签、元数据不会随图片一起进来,需单独复制,
+    # 否则成品只剩一叠图片、侧栏目录为空。
+    n_toc = 0
+    if ref_sizes is not None:
+        rd = fitz.open(args.ref_pdf)
+        n_toc = copy_navigation(rd, new)
+        rd.close()
+
     new.save(args.out_pdf, deflate=True, garbage=4)
     new.close()
-    
 
     # cleanup temp jpgs
     for f in glob.glob(os.path.join(tmp_dir, "*.jpg")):
         os.remove(f)
     os.rmdir(tmp_dir)
     mb = os.path.getsize(args.out_pdf) / 1e6
-    print(f"Done: {args.out_pdf}  ({mb:.1f} MB, {n} pages)")
+    print(f"Done: {args.out_pdf}  ({mb:.1f} MB, {n} pages, 目录 {n_toc} 条)")
 
 
 if __name__ == "__main__":

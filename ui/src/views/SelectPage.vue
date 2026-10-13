@@ -1,0 +1,389 @@
+<template>
+  <div class="select-page">
+    <!-- 上下结构:上 = 左右两栏,下 = 底部进度条 -->
+    <div class="cols">
+      <!-- 左栏:处理状态(终端式,一行行输出并自动滚动,类似安装包) -->
+      <section class="col col-status">
+        <h3 class="page-title">处理状态</h3>
+        <div ref="consoleBox" class="console">
+          <div v-if="!consoleLines.length" class="empty">尚未开始任务</div>
+          <div v-for="(ln, i) in consoleLines" :key="i" class="line" :class="ln.cls">
+            {{ ln.text }}
+          </div>
+        </div>
+        <div v-if="running" class="lock-tip">任务运行中，右侧文件选择已锁定</div>
+      </section>
+
+      <!-- 右栏:原文件选择 UI(运行中锁定不可交互) -->
+      <section class="col col-file">
+        <h3 class="page-title">选择 PDF 文档</h3>
+
+        <!-- 点击 / 拖拽选择 PDF(桌面模式走原生对话框,浏览器模式走上传) -->
+        <div v-if="isDesktop" class="dropzone dropzone-custom" :class="{ locked: running }"
+             @click="onDesktopPick">
+          <div class="dz-icon">PDF</div>
+          <div class="el-upload__text">点击选择 或 拖拽 PDF / 文件夹到窗口（可多个）</div>
+          <div class="dz-sub">
+            或
+            <el-button size="small" text type="primary" :disabled="running"
+                       @click.stop="onDesktopPickFolder">选择文件夹（批量）</el-button>
+          </div>
+        </div>
+        <el-upload v-else class="dropzone" drag :auto-upload="false" :show-file-list="false"
+                   accept=".pdf" :disabled="running" :on-change="onPick">
+          <div class="dz-icon">PDF</div>
+          <div class="el-upload__text">点击选择 或 拖拽 PDF 到此处</div>
+        </el-upload>
+
+        <!-- 选中文件信息 -->
+        <div v-if="fileInfo" class="file-info">
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item :label="nameLabel" :span="2">
+              {{ fileInfo.name }}
+              <el-tag v-if="isBatch" size="small" type="primary" effect="plain"
+                      class="ml6">批量</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="大小">{{ sizeText }}</el-descriptions-item>
+            <el-descriptions-item :label="isBatch ? 'PDF 数量' : '页数'">
+              {{ isBatch ? `${fileInfo.count} 个` : pagesText }}
+            </el-descriptions-item>
+            <el-descriptions-item label="成品" :span="2">
+              <template v-if="isBatch">
+                <el-tag v-if="!fileInfo.count" type="danger" size="small">
+                  没有找到 PDF（若含文件夹，可在右侧开启「包含子文件夹」）
+                </el-tag>
+                <el-tag v-else-if="fileInfo.existing_count" type="warning" size="small">
+                  {{ fileInfo.existing_count }}/{{ fileInfo.count }} 已存在（开始时会询问跳过还是重做）
+                </el-tag>
+                <el-tag v-else type="success" size="small">尚未生成</el-tag>
+              </template>
+              <template v-else>
+                <el-tag v-if="fileInfo.out_exists" type="warning" size="small">
+                  已存在（开始时会询问是跳过还是重做）
+                </el-tag>
+                <el-tag v-else type="success" size="small">尚未生成</el-tag>
+              </template>
+            </el-descriptions-item>
+            <el-descriptions-item :label="isBatch ? '输出目录' : '输出路径'" :span="2">
+              <div class="out-path-row">
+                <span v-if="fileInfo.out_path" class="out-path" :title="fileInfo.out_path">
+                  {{ fileInfo.out_path }}
+                </span>
+                <span v-else class="out-path">各成品写入其源 PDF 所在目录</span>
+                <el-button v-if="fileInfo.out_path" size="small" text type="primary"
+                           @click="copyOutPath">复制</el-button>
+              </div>
+            </el-descriptions-item>
+          </el-descriptions>
+          <div class="file-actions">
+            <el-button size="small" text type="primary" :disabled="running"
+                       @click="control.clearFile()">更换文件</el-button>
+            <el-button v-if="fileInfo.out_path && (fileInfo.out_exists || isBatch)" size="small"
+                       type="primary" @click="revealOutput">
+              {{ isBatch ? "打开输出目录" : "在文件夹中显示" }}
+            </el-button>
+          </div>
+        </div>
+        <div v-else class="empty-box">
+          <el-empty description="尚未选择文档" :image-size="90" />
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部进度条:显示值经前端缓动(指数逼近,单调不减)平滑推进 -->
+    <div class="bottom-area">
+      <el-progress class="bar" :percentage="displayPercent" :stroke-width="28" text-inside
+                   :status="barStatus" :format="fmt" />
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from "vue";
+import { storeToRefs } from "pinia";
+import { ElMessage } from "element-plus";
+// 按需场景:JS API 需显式引样式(与 appControl.js 相同的处理方式)
+import "element-plus/es/components/message/style/css";
+import { api } from "../api/client";
+import { useAppState } from "../store/appState";
+import { useAppControl } from "../store/appControl";
+
+const store = useAppState();
+const control = useAppControl();
+const { state, running, phase, percent } = storeToRefs(store);
+
+const fileInfo = computed(() => control.fileInfo);
+const sizeText = computed(() => {
+  const n = control.fileInfo?.size;
+  if (n == null) return "—";
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : (n / 1024).toFixed(0) + " KB";
+});
+const pagesText = computed(() => control.fileInfo?.pages ?? "未知（探测失败）");
+const batchTotal = computed(() => state.value?.batch_total ?? 0);
+// 文件夹 或 多选/多拖 → 批量形态(展示口径一致)
+const isBatch = computed(() => !!(control.fileInfo?.is_dir || control.fileInfo?.is_multi));
+const nameLabel = computed(() => {
+  if (control.fileInfo?.is_multi) return "已选";
+  return control.fileInfo?.is_dir ? "文件夹" : "文件名";
+});
+
+// ── 桌面模式(pywebview 壳):原生对话框选文件 + 拖拽取绝对路径(不复制) ──
+// window.pywebview.api 是异步注入的:脚本执行时通常还不存在,注入完成才派发
+// pywebviewready。故此值必须是响应式的并监听该事件,否则会永久误判为浏览器模式,
+// 退化成「上传副本到 work/inbox」的通道,且拿不到原生文件夹选择。
+const isDesktop = ref(!!window.pywebview?.api);
+if (!isDesktop.value) {
+  const mark = () => { isDesktop.value = !!window.pywebview?.api; return isDesktop.value; };
+  window.addEventListener("pywebviewready", mark, { once: true });
+  // 兜底:事件若在本脚本执行前就已派发则收不到,故再轮询 5s
+  let tries = 0;
+  const timer = setInterval(() => { if (mark() || ++tries > 25) clearInterval(timer); }, 200);
+  onUnmounted(() => clearInterval(timer));
+}
+
+async function onDesktopPick() {
+  if (running.value) return;
+  try {
+    const path = await window.pywebview.api.select_file();
+    if (path) await control.selectByPath(path);
+  } catch (e) {
+    ElMessage.error(e.message || "选择文件失败");
+  }
+}
+
+// 批量:选一个文件夹,后端扫描其中的 PDF(是否含子目录由参数区开关决定)
+async function onDesktopPickFolder() {
+  if (running.value) return;
+  try {
+    const path = await window.pywebview.api.select_folder();
+    if (path) await control.selectByPath(path);
+  } catch (e) {
+    ElMessage.error(e.message || "选择文件夹失败");
+  }
+}
+
+// 递归开关变化时重新扫描,使「PDF 数量」即时反映(仅文件夹模式有意义)
+watch(() => control.params.recursive, () => {
+  if (control.fileInfo?.is_dir || control.fileInfo?.is_multi) control.refreshFileInfo();
+});
+
+// 在系统文件管理器中定位成品:成品存在即可用(不再依赖任务是否刚跑完)。
+// 桌面壳走原生 bridge;浏览器模式走本机后端 /api/files/reveal。
+async function revealOutput() {
+  const p = control.fileInfo?.out_path;
+  if (!p) return;
+  if (isDesktop.value) {
+    window.pywebview.api.open_in_folder(p);
+  } else {
+    try {
+      await api.reveal(p);
+    } catch (e) {
+      ElMessage.error(e.message || "打开目录失败");
+    }
+  }
+}
+
+// 复制成品完整路径(clipboard API 不可用时回退 execCommand)。
+async function copyOutPath() {
+  const p = control.fileInfo?.out_path;
+  if (!p) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(p);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = p;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    ElMessage.success("已复制路径");
+  } catch {
+    ElMessage.error("复制失败,请手动选择复制");
+  }
+}
+
+// ── 左栏:终端式状态输出(阶段切换/每完成一页追加一行,自动滚动到底) ──
+const consoleLines = ref([]);        // [{text, cls}] cls ∈ {"" , "ok", "err"}
+const lastPage = ref(0);             // 当前阶段已推进到的页数,用于页推进去重
+const consoleBox = ref(null);
+
+function pushLine(text, cls = "") {
+  consoleLines.value.push({ text, cls });
+  if (consoleLines.value.length > 1000) {          // 行数上限,防止长任务撑爆内存
+    consoleLines.value.splice(0, consoleLines.value.length - 1000);
+  }
+}
+
+// 行数变化 → 自动滚动到底部(像安装包一样持续下滚)
+watch(() => consoleLines.value.length, async () => {
+  await nextTick();
+  const el = consoleBox.value;
+  if (el) el.scrollTop = el.scrollHeight;
+});
+
+// 新任务(job_id 变化)→ 清空并输出起始行
+watch(() => state.value?.job_id, (id, oldId) => {
+  if (id && id !== oldId) {
+    consoleLines.value = [];
+    lastPage.value = 0;
+    const st = state.value || {};
+    if (st.batch_total > 1) {
+      const dir = st.input_path ? st.input_path.split(/[\\/]/).pop() : "";
+      pushLine(`开始批量处理：共 ${st.batch_total} 个 PDF${dir ? `（${dir}）` : ""}`);
+    } else {
+      const name = st.pdf ? st.pdf.split(/[\\/]/).pop() : "";
+      pushLine(name ? `开始处理：${name}` : "开始处理…");
+    }
+  }
+});
+
+// 批量:切到下一个文件时输出一行 [i/N]。声明顺序在 phase 之前,
+// 保证「[2/12] 正在处理 x.pdf」先于该文件的「正在拆分页面…」出现。
+watch(() => state.value?.batch_index, (i) => {
+  const st = state.value || {};
+  if (!i || st.batch_total <= 1) return;
+  const name = st.pdf ? st.pdf.split(/[\\/]/).pop() : "";
+  pushLine(`[${i}/${st.batch_total}] 正在处理：${name}`);
+});
+
+// 阶段切换 → 输出一行(同时把页计数器归零,因为各阶段页码各自从 0 起)
+watch(phase, (ph, old) => {
+  if (ph === old) return;
+  lastPage.value = 0;
+  if (ph === "extract") pushLine("正在拆分页面…");
+  else if (ph === "upscale") pushLine("正在超分…");
+  else if (ph === "rebuild") pushLine("正在重建 PDF…");
+  else if (ph === "done") {
+    pushLine(batchTotal.value > 1 ? (state.value?.message || "批量完成") : "任务完成", "ok");
+    control.refreshFileInfo();      // 成品此时才落盘,重探以点亮「已存在」与打开按钮
+  }
+  else if (ph === "error") {
+    if (batchTotal.value > 1) pushLine(state.value?.message || "批量结束", "");
+    pushLine(`${batchTotal.value > 1 ? "存在失败" : "任务失败"}：${state.value?.error || "未知错误"}`, "err");
+    control.refreshFileInfo();      // 批量中已成功的文件仍有成品,刷新计数
+  }
+  else if (ph === "canceled") pushLine("任务已取消", "err");
+});
+
+// 页推进 → 每完成一页追加一行「已完成xxx x/y 页」
+watch(() => state.value?.page, (p) => {
+  const total = state.value?.total;
+  if (typeof p !== "number" || p <= lastPage.value) return;
+  lastPage.value = p;
+  if (total) {
+    if (phase.value === "extract") pushLine(`已完成拆分 ${p}/${total} 页`);
+    else if (phase.value === "upscale") pushLine(`已完成超分 ${p}/${total} 页`);
+    else if (phase.value === "rebuild") pushLine(`已完成重建 ${p}/${total} 页`);
+  } else if (phase.value === "extract" || phase.value === "upscale") {
+    pushLine(`进度：已完成 ${p} 页`);
+  }
+});
+
+// ── 底部进度条:显示值缓动(不直接渲染真实 percent,消除页数少时的大段瞬跳) ──
+const displayPct = ref(0);
+const displayPercent = computed(() => Math.round(displayPct.value));
+const fmt = (p) => `${p}%`;
+const barStatus = computed(() => {
+  if (phase.value === "done") return "success";
+  if (phase.value === "error") return "exception";
+  return "";
+});
+
+let smoothTimer = null;
+// 新任务(job_id 变化)→ 显示进度归零重来
+watch(() => state.value?.job_id, () => { displayPct.value = 0; });
+// 终态直接锚定:完成满格、失败/取消定格,避免任务结束后进度条还在慢吞吞滑动
+watch(phase, (ph) => {
+  if (ph === "done") displayPct.value = 100;
+  else if (ph === "error" || ph === "canceled") displayPct.value = percent.value;
+});
+
+onMounted(() => {
+  // 每 200ms 向真实百分比指数逼近(单调不减);大步差距走快、小步走慢,
+  // 保证页数少时进度条也呈连续滑动而非瞬跳。
+  smoothTimer = setInterval(() => {
+    const target = percent.value;
+    if (displayPct.value < target) {
+      const step = Math.max(1, (target - displayPct.value) * 0.12);
+      displayPct.value = Math.min(target, displayPct.value + step);
+    }
+  }, 200);
+});
+onUnmounted(() => clearInterval(smoothTimer));
+
+// 点击 / 拖拽上传
+function onPick(uploadFile) {
+  // selectFile = 上传副本 -> selectByPath(inspect) 选中
+  control.selectFile(uploadFile.raw)
+    .catch((e) => ElMessage.error(e.message || "上传失败"));
+}
+
+// 阻止浏览器默认「拖放打开文件」:拖到窗口空白处会直接跳转打开 PDF
+const preventDrop = (e) => e.preventDefault();
+onMounted(() => {
+  window.addEventListener("dragover", preventDrop);
+  window.addEventListener("drop", preventDrop);
+  // 桌面拖拽回传路径的全局入口(由 server/bridge.py 的 drop 钩子调用)
+  // bridge.py 现在回传「本次拖入的全部条目」数组(可混合 PDF 与文件夹);
+  // 兼容旧的单字符串形式。
+  window.__pdfclarityDesktopPick = (paths) => {
+    if (running.value) return;
+    const list = Array.isArray(paths) ? paths : [paths];
+    control.selectByPaths(list).catch((e) => ElMessage.error(e.message || "文件探测失败"));
+  };
+});
+onUnmounted(() => {
+  window.removeEventListener("dragover", preventDrop);
+  window.removeEventListener("drop", preventDrop);
+  delete window.__pdfclarityDesktopPick;
+});
+</script>
+
+<style scoped>
+.select-page { height: 100%; display: flex; flex-direction: column; }
+.cols { flex: 1; display: flex; min-height: 0; }
+.col { min-width: 0; }
+/* 左栏:处理状态(终端式) */
+.col-status { flex: 1; padding: 24px 16px; border-right: 1px dashed #e4e7ed;
+  display: flex; flex-direction: column; min-height: 0; }
+.page-title { font-weight: 600; margin: 0 0 16px; }
+.console { flex: 1; min-height: 0; overflow-y: auto; background: #1e1e1e; color: #d4d4d4;
+  border-radius: 6px; font-family: Consolas, "Courier New", monospace; font-size: 12px;
+  line-height: 1.8; padding: 10px 12px; }
+.console .line { white-space: pre-wrap; word-break: break-all; }
+.console .line.ok { color: #67c23a; }
+.console .line.err { color: #f56c6c; }
+.console .empty { color: #6b6b6b; }
+.lock-tip { margin-top: 12px; font-size: 12px; color: #e6a23c; }
+/* 右栏:文件选择 */
+.col-file { flex: 1; max-width: 720px; padding: 24px 16px; }
+.dropzone :deep(.el-upload-dragger) { padding: 36px 0; }
+/* 桌面模式自定义 dropzone:仿 el-upload 拖拽区外观(可点击) */
+.dropzone-custom {
+  border: 1px dashed var(--el-border-color-darker, #d9d9d9);
+  border-radius: 6px;
+  background: #fafafa;
+  padding: 36px 0;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.dropzone-custom:hover { border-color: #409eff; background: #f5f9ff; }
+.dropzone-custom.locked { opacity: 0.6; cursor: not-allowed; }
+.dz-icon { font-size: 40px; font-weight: 700; color: #409eff; letter-spacing: 2px;
+  margin-bottom: 8px; line-height: 1; }
+.dz-sub { margin-top: 6px; font-size: 12px; color: #909399; }
+.ml6 { margin-left: 6px; }
+.file-info { margin-top: 8px; }
+.out-path-row { display: flex; align-items: flex-start; gap: 8px; }
+.out-path { flex: 1; min-width: 0; word-break: break-all; line-height: 1.6;
+  font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #606266; }
+.file-actions { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+.empty-box { margin-top: 8px; border: 1px dashed #e4e7ed; border-radius: 6px; }
+/* 底部进度条 */
+.bottom-area { flex-shrink: 0; padding: 10px 16px; border-top: 1px solid #ebeef5;
+  background: #fff; }
+.bar { width: 100%; }
+</style>
